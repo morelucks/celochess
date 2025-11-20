@@ -12,6 +12,6 @@ contract MatchManagerTest is Test {
     }
 
     function testVersion() public view {
-        assertEq(manager.version(), "0.0.1-scaffold");
+        assertEq(manager.version(), "0.1.0-data-structs");
     }
 }

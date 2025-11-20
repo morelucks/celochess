@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-/// @title MatchManager Data Primitives
-/// @notice Defines match structure, enums, and events for CeloChess.
-contract MatchManager {
-    /*//////////////////////////////////////////////////////////////
-                                STORAGE
-    //////////////////////////////////////////////////////////////*/
+interface IERC20Minimal {
+    function transfer(address to, uint256 amount) external returns (bool);
 
-    uint256 public nextMatchId = 1;
-    mapping(uint256 => Match) internal matches;
+    function transferFrom(address from, address to, uint256 amount) external returns (bool);
+}
+
+/// @title MatchManager
+/// @notice Handles PvP match lifecycle and staking escrow for CeloChess.
+contract MatchManager {
     /*//////////////////////////////////////////////////////////////
                              ENUMS & TYPES
     //////////////////////////////////////////////////////////////*/
@@ -41,10 +41,11 @@ contract MatchManager {
         address account;
         PlayerColor color;
         uint256 joinedAt;
+        bool escrowed;
     }
 
     struct BoardState {
-        bytes32 fenHash; // hash of FEN or state encoding
+        bytes32 fenHash;
         uint8 moveCount;
     }
 
@@ -59,6 +60,7 @@ contract MatchManager {
         address winner;
         uint256 createdAt;
         uint256 updatedAt;
+        uint256 pot;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -80,10 +82,16 @@ contract MatchManager {
     event StakeWithdrawn(uint256 indexed matchId, address indexed player, uint256 amount);
 
     /*//////////////////////////////////////////////////////////////
+                                STORAGE
+    //////////////////////////////////////////////////////////////*/
+
+    uint256 public nextMatchId = 1;
+    mapping(uint256 => Match) internal matches;
+
+    /*//////////////////////////////////////////////////////////////
                                 ACTIONS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Creates a match and places msg.sender in the requested color slot.
     function createMatch(
         GameMode mode,
         PlayerColor creatorColor,
@@ -102,7 +110,10 @@ contract MatchManager {
         matchRef.stake = StakeConfig(stakeToken, stakeAmount);
         matchRef.board = BoardState({fenHash: initialStateHash, moveCount: 0});
 
-        PlayerSlot memory slot = PlayerSlot({account: msg.sender, color: creatorColor, joinedAt: block.timestamp});
+        _validateStakeConfig(mode, stakeToken, stakeAmount);
+
+        PlayerSlot memory slot =
+            PlayerSlot({account: msg.sender, color: creatorColor, joinedAt: block.timestamp, escrowed: false});
 
         if (creatorColor == PlayerColor.White) {
             matchRef.white = slot;
@@ -110,23 +121,27 @@ contract MatchManager {
             matchRef.black = slot;
         }
 
+        _collectStake(matchRef, msg.sender);
+
         emit MatchCreated(matchId, msg.sender, mode, matchRef.stake);
     }
 
-    /// @notice Allows another player to join an open match.
     function joinMatch(uint256 matchId) external {
         Match storage matchRef = _requireMatch(matchId);
         require(matchRef.status == MatchStatus.WaitingForPlayer, "match: not open");
+        require(msg.sender != matchRef.white.account && msg.sender != matchRef.black.account, "match: already joined");
 
         if (matchRef.white.account == address(0)) {
-            matchRef.white = PlayerSlot(msg.sender, PlayerColor.White, block.timestamp);
+            matchRef.white = PlayerSlot(msg.sender, PlayerColor.White, block.timestamp, false);
             emit MatchJoined(matchId, msg.sender, PlayerColor.White);
         } else if (matchRef.black.account == address(0)) {
-            matchRef.black = PlayerSlot(msg.sender, PlayerColor.Black, block.timestamp);
+            matchRef.black = PlayerSlot(msg.sender, PlayerColor.Black, block.timestamp, false);
             emit MatchJoined(matchId, msg.sender, PlayerColor.Black);
         } else {
             revert("match: already full");
         }
+
+        _collectStake(matchRef, msg.sender);
 
         if (matchRef.white.account != address(0) && matchRef.black.account != address(0)) {
             matchRef.status = MatchStatus.Active;
@@ -135,7 +150,6 @@ contract MatchManager {
         }
     }
 
-    /// @notice Submits a move updating the board hash (validation TBD).
     function submitMove(uint256 matchId, bytes32 newStateHash, bytes calldata moveData) external {
         Match storage matchRef = _requireMatch(matchId);
         require(matchRef.status == MatchStatus.Active, "match: inactive");
@@ -147,7 +161,6 @@ contract MatchManager {
         emit MoveSubmitted(matchId, msg.sender, matchRef.board, moveData);
     }
 
-    /// @notice Marks a match as finished and records the winner (no payouts yet).
     function finishMatch(uint256 matchId, address winner) external {
         Match storage matchRef = _requireMatch(matchId);
         require(matchRef.status == MatchStatus.Active, "match: not active");
@@ -157,17 +170,31 @@ contract MatchManager {
         matchRef.winner = winner;
         matchRef.updatedAt = block.timestamp;
 
-        emit MatchFinished(matchId, winner, MatchStatus.Completed, 0);
+        uint256 reward = _payout(matchRef);
+
+        emit MatchFinished(matchId, winner, MatchStatus.Completed, reward);
     }
 
-    /// @notice Returns match metadata.
+    function cancelMatch(uint256 matchId) external {
+        Match storage matchRef = _requireMatch(matchId);
+        require(matchRef.status == MatchStatus.WaitingForPlayer, "match: cannot cancel");
+        require(msg.sender == matchRef.white.account || msg.sender == matchRef.black.account, "match: not player");
+
+        matchRef.status = MatchStatus.Cancelled;
+        matchRef.updatedAt = block.timestamp;
+
+        _refundStake(matchRef, PlayerColor.White);
+        _refundStake(matchRef, PlayerColor.Black);
+
+        emit MatchCancelled(matchId);
+    }
+
     function getMatch(uint256 matchId) external view returns (Match memory) {
         return matches[matchId];
     }
 
-    /// @notice Returns the version of the manager contract.
     function version() external pure returns (string memory) {
-        return "0.2.0-skeleton";
+        return "0.3.0-escrow";
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -178,5 +205,61 @@ contract MatchManager {
         matchRef = matches[matchId];
         require(matchRef.id != 0, "match: invalid id");
     }
-}
 
+    function _validateStakeConfig(GameMode mode, address token, uint256 amount) internal pure {
+        if (mode == GameMode.PvP) {
+            require(token != address(0) && amount > 0, "match: stake required");
+        }
+    }
+
+    function _collectStake(Match storage matchRef, address from) internal {
+        StakeConfig memory stake = matchRef.stake;
+        if (stake.token == address(0) || stake.amount == 0 || from == address(0)) return;
+
+        _safeTransferFrom(stake.token, from, address(this), stake.amount);
+        matchRef.pot += stake.amount;
+
+        if (from == matchRef.white.account) {
+            matchRef.white.escrowed = true;
+        } else if (from == matchRef.black.account) {
+            matchRef.black.escrowed = true;
+        }
+    }
+
+    function _payout(Match storage matchRef) internal returns (uint256 reward) {
+        reward = matchRef.pot;
+        if (reward == 0 || matchRef.winner == address(0)) return reward;
+
+        matchRef.pot = 0;
+        matchRef.white.escrowed = false;
+        matchRef.black.escrowed = false;
+
+        _safeTransfer(matchRef.stake.token, matchRef.winner, reward);
+        emit StakeWithdrawn(matchRef.id, matchRef.winner, reward);
+    }
+
+    function _refundStake(Match storage matchRef, PlayerColor color) internal {
+        StakeConfig memory stake = matchRef.stake;
+        if (stake.token == address(0) || stake.amount == 0) return;
+
+        PlayerSlot storage slot = color == PlayerColor.White ? matchRef.white : matchRef.black;
+        if (!slot.escrowed || slot.account == address(0)) return;
+
+        slot.escrowed = false;
+        matchRef.pot -= stake.amount;
+        _safeTransfer(stake.token, slot.account, stake.amount);
+        emit StakeWithdrawn(matchRef.id, slot.account, stake.amount);
+    }
+
+    function _safeTransferFrom(address token, address from, address to, uint256 amount) private {
+        (bool success, bytes memory data) =
+            token.call(abi.encodeWithSelector(IERC20Minimal.transferFrom.selector, from, to, amount));
+        require(success && (data.length == 0 || abi.decode(data, (bool))), "stake: transferFrom");
+    }
+
+    function _safeTransfer(address token, address to, uint256 amount) private {
+        (bool success, bytes memory data) =
+            token.call(abi.encodeWithSelector(IERC20Minimal.transfer.selector, to, amount));
+        require(success && (data.length == 0 || abi.decode(data, (bool))), "stake: transfer");
+    }
+}

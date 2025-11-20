@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import {BoardLib} from "../chess/BoardLib.sol";
+import {ChessAI} from "../chess/ChessAI.sol";
 
 interface IERC20Minimal {
     function transfer(address to, uint256 amount) external returns (bool);
@@ -125,11 +126,34 @@ contract MatchManager {
 
         _collectStake(matchRef, msg.sender);
 
+        // PvC matches auto-start (no need to wait for opponent)
+        if (mode == GameMode.PvC) {
+            // Set AI as the opponent (opposite color of creator)
+            PlayerColor aiColor = creatorColor == PlayerColor.White ? PlayerColor.Black : PlayerColor.White;
+            PlayerSlot memory aiSlot = PlayerSlot({
+                account: address(this), // AI is represented by contract address
+                color: aiColor,
+                joinedAt: block.timestamp,
+                escrowed: false // AI doesn't stake
+            });
+
+            if (aiColor == PlayerColor.White) {
+                matchRef.white = aiSlot;
+            } else {
+                matchRef.black = aiSlot;
+            }
+
+            matchRef.status = MatchStatus.Active;
+            matchRef.updatedAt = block.timestamp;
+            emit MatchStarted(matchId, matchRef.board);
+        }
+
         emit MatchCreated(matchId, msg.sender, mode, matchRef.stake);
     }
 
     function joinMatch(uint256 matchId) external {
         Match storage matchRef = _requireMatch(matchId);
+        require(matchRef.mode == GameMode.PvP, "match: pvc no join");
         require(matchRef.status == MatchStatus.WaitingForPlayer, "match: not open");
         require(msg.sender != matchRef.white.account && msg.sender != matchRef.black.account, "match: already joined");
 
@@ -177,12 +201,32 @@ contract MatchManager {
         matchRef.updatedAt = block.timestamp;
 
         emit MoveSubmitted(matchId, msg.sender, matchRef.board, moveData);
+
+        // Auto-trigger AI move in PvC matches if it's AI's turn
+        if (matchRef.mode == GameMode.PvC) {
+            _triggerAIMove(matchRef);
+        }
+    }
+
+    /// @notice Triggers an AI move in a PvC match
+    /// @param matchId The ID of the match
+    function triggerAIMove(uint256 matchId) external {
+        Match storage matchRef = _requireMatch(matchId);
+        require(matchRef.mode == GameMode.PvC, "match: not pvc");
+        require(matchRef.status == MatchStatus.Active, "match: inactive");
+        _triggerAIMove(matchRef);
     }
 
     function finishMatch(uint256 matchId, address winner) external {
         Match storage matchRef = _requireMatch(matchId);
         require(matchRef.status == MatchStatus.Active, "match: not active");
         require(winner == matchRef.white.account || winner == matchRef.black.account, "match: invalid winner");
+
+        // In PvC, only human player can win (AI doesn't stake, so can't receive payout)
+        if (matchRef.mode == GameMode.PvC) {
+            address aiAccount = address(this);
+            require(winner != aiAccount, "match: ai cannot win");
+        }
 
         matchRef.status = MatchStatus.Completed;
         matchRef.winner = winner;
@@ -212,7 +256,7 @@ contract MatchManager {
     }
 
     function version() external pure returns (string memory) {
-        return "0.4.0-move-validation";
+        return "0.5.0-pvc-support";
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -228,6 +272,7 @@ contract MatchManager {
         if (mode == GameMode.PvP) {
             require(token != address(0) && amount > 0, "match: stake required");
         }
+        // PvC matches can have optional staking (player can stake to make it more interesting)
     }
 
     function _collectStake(Match storage matchRef, address from) internal {
@@ -279,5 +324,33 @@ contract MatchManager {
         (bool success, bytes memory data) =
             token.call(abi.encodeWithSelector(IERC20Minimal.transfer.selector, to, amount));
         require(success && (data.length == 0 || abi.decode(data, (bool))), "stake: transfer");
+    }
+
+    /// @dev Internal function to trigger AI move in PvC matches
+    function _triggerAIMove(Match storage matchRef) internal {
+        // Check if AI is the opponent
+        address aiAccount = address(this);
+        bool aiIsWhite = matchRef.white.account == aiAccount;
+        bool aiIsBlack = matchRef.black.account == aiAccount;
+
+        if (!aiIsWhite && !aiIsBlack) return; // Not a PvC match
+
+        // Check if it's AI's turn
+        bool isWhiteTurn = BoardLib.isWhiteTurn(matchRef.board.moveCount);
+        if ((aiIsWhite && !isWhiteTurn) || (aiIsBlack && isWhiteTurn)) {
+            return; // Not AI's turn
+        }
+
+        // Generate AI move
+        bytes4 aiMove = ChessAI.generateMove(matchRef.board.moveCount, matchRef.board.fenHash);
+
+        // Generate new state hash (deterministic based on current state + move)
+        bytes32 newStateHash = keccak256(abi.encodePacked(matchRef.board.fenHash, aiMove, matchRef.board.moveCount));
+
+        // Update board state
+        matchRef.board = BoardState({fenHash: newStateHash, moveCount: matchRef.board.moveCount + 1});
+        matchRef.updatedAt = block.timestamp;
+
+        emit MoveSubmitted(matchRef.id, aiAccount, matchRef.board, abi.encodePacked(aiMove));
     }
 }

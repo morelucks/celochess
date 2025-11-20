@@ -62,7 +62,72 @@ contract MatchManagerTest is Test {
     }
 
     function testVersion() public view {
-        assertEq(manager.version(), "0.4.0-move-validation");
+        assertEq(manager.version(), "0.5.0-pvc-support");
+    }
+
+    function testCreatePvCMatchAutoStarts() public {
+        vm.startPrank(player1);
+        uint256 matchId = manager.createMatch(
+            MatchManager.GameMode.PvC,
+            MatchManager.PlayerColor.White,
+            address(0), // No stake for PvC
+            0,
+            START_HASH
+        );
+        vm.stopPrank();
+
+        MatchManager.Match memory data = manager.getMatch(matchId);
+        assertEq(uint256(data.mode), uint256(MatchManager.GameMode.PvC));
+        assertEq(uint256(data.status), uint256(MatchManager.MatchStatus.Active));
+        assertEq(data.white.account, player1);
+        assertEq(data.black.account, address(manager)); // AI is contract address
+    }
+
+    function testPvCMatchCannotJoin() public {
+        vm.startPrank(player1);
+        uint256 matchId =
+            manager.createMatch(MatchManager.GameMode.PvC, MatchManager.PlayerColor.White, address(0), 0, START_HASH);
+        vm.stopPrank();
+
+        vm.expectRevert("match: pvc no join");
+        vm.prank(player2);
+        manager.joinMatch(matchId);
+    }
+
+    function testPvCMatchAutoTriggersAIMove() public {
+        vm.startPrank(player1);
+        uint256 matchId =
+            manager.createMatch(MatchManager.GameMode.PvC, MatchManager.PlayerColor.White, address(0), 0, START_HASH);
+        vm.stopPrank();
+
+        // Player submits first move
+        bytes4 playerMove = BoardLib.encodeMove(12, 28, bytes2(0));
+        bytes32 newHash = bytes32(uint256(2));
+        vm.prank(player1);
+        manager.submitMove(matchId, newHash, abi.encodePacked(playerMove));
+
+        // AI should have automatically moved
+        MatchManager.Match memory data = manager.getMatch(matchId);
+        assertEq(data.board.moveCount, 2); // Player move + AI move
+    }
+
+    function testPvCMatchOnlyHumanCanWin() public {
+        vm.startPrank(player1);
+        uint256 matchId =
+            manager.createMatch(MatchManager.GameMode.PvC, MatchManager.PlayerColor.White, address(0), 0, START_HASH);
+        vm.stopPrank();
+
+        // Try to finish with AI as winner (should fail)
+        vm.expectRevert("match: ai cannot win");
+        manager.finishMatch(matchId, address(manager));
+
+        // Human can win
+        vm.prank(player1);
+        manager.finishMatch(matchId, player1);
+
+        MatchManager.Match memory data = manager.getMatch(matchId);
+        assertEq(data.winner, player1);
+        assertEq(uint256(data.status), uint256(MatchManager.MatchStatus.Completed));
     }
 
     function testCreateMatchCollectsStake() public {

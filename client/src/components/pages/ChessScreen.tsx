@@ -1,14 +1,12 @@
 // Import the chess components
 import ChessGameWrapper from "../ChessGameWrapper";
 import { useState, useEffect } from "react";
+import { useWallet } from "../../hooks/useWallet";
 
 export default function ChessScreen() {
-  // Placeholder - will be replaced with Celo wallet connection
-  const status = "disconnected";
-  const isConnecting = false;
-  const handleConnect = () => console.log("Connect wallet - to be implemented");
-  const handleDisconnect = () => console.log("Disconnect wallet - to be implemented");
-  const address = null;
+  const { address, status, isConnecting, connect, disconnect } = useWallet();
+  const handleConnect = connect;
+  const handleDisconnect = disconnect;
   const [currentGameMode, setCurrentGameMode] = useState('pvc');
 
   // Listen for game mode changes from localStorage

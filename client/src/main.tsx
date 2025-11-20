@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 
 // App Entry
 import App from "./app/app";
+import { WalletProvider } from "./providers/WalletProvider";
 import "./index.css";
 
 // Main entry point
@@ -12,7 +13,9 @@ function main() {
 
   createRoot(rootElement).render(
     <StrictMode>
-      <App />
+      <WalletProvider>
+        <App />
+      </WalletProvider>
     </StrictMode>
   );
 }

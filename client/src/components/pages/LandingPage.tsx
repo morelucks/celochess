@@ -4,15 +4,13 @@ import StatsSection from "../landing/StatsSection";
 import CTASection from "../landing/CTASection";
 import { useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
+import { useWallet } from "../../hooks/useWallet";
 
 export default function LandingPage() {
   const navigate = useNavigate();
-  // Placeholder - will be replaced with Celo wallet connection
-  const status = "disconnected";
-  const isConnecting = false;
-  const handleConnect = () => console.log("Connect wallet - to be implemented");
-  const handleDisconnect = () => console.log("Disconnect wallet - to be implemented");
-  const address = null;
+  const { address, status, isConnecting, connect, disconnect } = useWallet();
+  const handleConnect = connect;
+  const handleDisconnect = disconnect;
   const [shouldNavigateAfterConnect, setShouldNavigateAfterConnect] = useState(false);
 
   // Auto-navigate to chess page once wallet is connected (if user clicked a button)

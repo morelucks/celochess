@@ -1,13 +1,11 @@
 import { Button } from "./ui/button";
 import { Loader2, Wallet, LogOut } from "lucide-react"
+import { useWallet } from "../hooks/useWallet";
 
 export function StatusBar() {
-  // Placeholder - will be replaced with Celo wallet connection
-  const status = "disconnected";
-  const address = null;
-  const isConnecting = false;
-  const handleConnect = () => console.log("Connect wallet - to be implemented");
-  const handleDisconnect = () => console.log("Disconnect wallet - to be implemented");
+  const { address, status, isConnecting, connect, disconnect } = useWallet();
+  const handleConnect = connect;
+  const handleDisconnect = disconnect;
 
   const isConnected = status === "connected";
   const isLoading = isConnecting || status === "connecting";
@@ -28,16 +26,11 @@ export function StatusBar() {
   };
 
   const getDeploymentType = () => {
-    switch (import.meta.env.VITE_PUBLIC_DEPLOY_TYPE) {
-      case "localhost":
-        return "Localhost";
-      case "mainnet":
-        return "Mainnet";
-      case "sepolia":
-        return "Sepolia";
-      default:
-        return "Sepolia";
+    // Use chain info from wallet if available
+    if (import.meta.env.VITE_PUBLIC_DEPLOY_TYPE === "mainnet") {
+      return "Celo Mainnet";
     }
+    return "Celo Alfajores";
   };
 
 

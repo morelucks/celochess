@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import {Test} from "forge-std/Test.sol";
 import {MatchManager} from "../src/match/MatchManager.sol";
+import {BoardLib} from "../src/chess/BoardLib.sol";
 
 contract MockERC20 {
     string public name = "Mock";
@@ -61,7 +62,7 @@ contract MatchManagerTest is Test {
     }
 
     function testVersion() public view {
-        assertEq(manager.version(), "0.3.0-escrow");
+        assertEq(manager.version(), "0.4.0-move-validation");
     }
 
     function testCreateMatchCollectsStake() public {
@@ -124,6 +125,40 @@ contract MatchManagerTest is Test {
         vm.expectRevert("match: inactive");
         vm.prank(player1);
         manager.submitMove(matchId, bytes32(uint256(1)), bytes("e2e4"));
+    }
+
+    function testSubmitMoveValidatesTurn() public {
+        uint256 matchId = _readyMatch();
+        bytes32 newHash = bytes32(uint256(2));
+
+        // Create valid move: e2 (square 52) to e4 (square 36) - wait, need to check actual square numbers
+        // Chess squares: a1=0, b1=1, ..., h1=7, a2=8, ..., h8=63
+        // e2 = file 4 (e), rank 1 (2nd rank, 0-indexed) = 4 + 8*1 = 12
+        // e4 = file 4 (e), rank 3 (4th rank, 0-indexed) = 4 + 8*3 = 28
+        bytes4 validMove = BoardLib.encodeMove(12, 28, bytes2(0));
+
+        // White can submit first move (moveCount 0, so isWhiteTurn = true)
+        vm.prank(player1);
+        manager.submitMove(matchId, newHash, abi.encodePacked(validMove));
+
+        // Black can submit after white (moveCount 1, so isWhiteTurn = false)
+        bytes32 newHash2 = bytes32(uint256(3));
+        bytes4 validMove2 = BoardLib.encodeMove(52, 36, bytes2(0)); // e7 to e5
+        vm.prank(player2);
+        manager.submitMove(matchId, newHash2, abi.encodePacked(validMove2));
+
+        // Test: black trying to move when it's white's turn (should fail)
+        uint256 matchId2 = _readyMatch();
+        vm.expectRevert("move: not white turn");
+        vm.prank(player2);
+        manager.submitMove(matchId2, bytes32(uint256(2)), abi.encodePacked(validMove));
+    }
+
+    function testSubmitMoveValidatesFormat() public {
+        uint256 matchId = _readyMatch();
+        vm.expectRevert("move: invalid format");
+        vm.prank(player1);
+        manager.submitMove(matchId, bytes32(uint256(2)), bytes("abc")); // too short
     }
 
     function _createMatch() internal returns (uint256 matchId) {

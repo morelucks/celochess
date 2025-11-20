@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import {BoardLib} from "../chess/BoardLib.sol";
+
 interface IERC20Minimal {
     function transfer(address to, uint256 amount) external returns (bool);
 
@@ -155,6 +157,22 @@ contract MatchManager {
         require(matchRef.status == MatchStatus.Active, "match: inactive");
         require(msg.sender == matchRef.white.account || msg.sender == matchRef.black.account, "match: not player");
 
+        // Validate move data format (must be at least 4 bytes for encoded move)
+        require(moveData.length >= 4, "move: invalid format");
+
+        // Decode move to validate square indices
+        bytes4 encodedMove = bytes4(moveData);
+        (uint8 fromSquare, uint8 toSquare,) = BoardLib.decodeMove(encodedMove);
+
+        // Validate it's the correct player's turn
+        bool isWhiteTurn = BoardLib.isWhiteTurn(matchRef.board.moveCount);
+        if (isWhiteTurn) {
+            require(msg.sender == matchRef.white.account, "move: not white turn");
+        } else {
+            require(msg.sender == matchRef.black.account, "move: not black turn");
+        }
+
+        // Update board state
         matchRef.board = BoardState({fenHash: newStateHash, moveCount: matchRef.board.moveCount + 1});
         matchRef.updatedAt = block.timestamp;
 
@@ -194,7 +212,7 @@ contract MatchManager {
     }
 
     function version() external pure returns (string memory) {
-        return "0.3.0-escrow";
+        return "0.4.0-move-validation";
     }
 
     /*//////////////////////////////////////////////////////////////

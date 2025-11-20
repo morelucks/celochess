@@ -15,34 +15,36 @@ CeloChess is a mobile-first chess experience that uses the Celo blockchain so ev
 | --- | --- |
 | Wallet | Reown AppKit for MiniPay + other Celo wallets, with social login fallback. |
 | UI | Composer Kit components for wallet cards, balances, swaps, and NFT rewards. |
-| Gameplay | Local chess engine today; on-chain move verification and settlement on Celo later. |
+| Gameplay | **On-chain chess matches** with full move validation and state tracking. |
+| PvP Mode | Player vs Player matches with ERC-20 token staking and winner-takes-all prize pools. |
+| PvC Mode | Player vs Computer matches with on-chain AI opponent (optional staking). |
+| Smart Contracts | Solidity contracts deployed on Celo for match management, staking escrow, and move validation. |
 | Rewards | cUSD-based rewards, prediction pools, and optional NFT trophies. |
-| Docs | Straightforward setup so hackathon judges can clone, run, and extend. |
+| Docs | Complete setup guide with deployment instructions for Celo Alfajores and Mainnet. |
 
 ## Architecture at a Glance
 
 ```
 client/             # React + Vite frontend
-  src/chess/        # Existing chess UI/logic (local engine for now)
+  src/chess/        # Chess UI/logic (to be integrated with on-chain contracts)
   src/components/   # Status bar, landing page, stats, etc.
   src/zustand/      # Local UI/game state
-contract/           # Placeholder for Solidity contracts (Celo-compatible)
+contract/           # Solidity smart contracts (Foundry)
+  src/match/        # MatchManager.sol - PvP & PvC match lifecycle
+  src/chess/        # BoardLib.sol, ChessAI.sol - chess logic & AI
+  test/             # Comprehensive test suite (14 tests)
+  script/           # Deployment scripts for Celo networks
 ```
 
-### Immediate Roadmap
+### Smart Contract Features 
+1. **Match Management** – Create, join, and manage chess matches on-chain
+2. **PvP Mode** – Player vs Player with ERC-20 token staking and escrow
+3. **PvC Mode** – Player vs Computer with on-chain AI opponent
+4. **Move Validation** – Turn-based validation using BoardLib
+5. **Staking Escrow** – Secure token escrow with winner-takes-all payouts
+6. **Chess Logic** – BoardLib for move encoding/decoding and turn management
+7. **AI Opponent** – Deterministic on-chain AI for PvC matches
 
-1. **Wallet Layer** – integrate Reown AppKit with Celo chain config.
-2. **UI Layer** – replace custom wallet banners with Composer Kit `Wallet`, `Payment`, and `Identity` blocks.
-3. **Smart Contracts** – migrate from Cairo/Dojo to Solidity (Foundry + Hardhat). Deploy lightweight match + rewards contracts on Celo Alfajores/mainnet.
-4. **MiniPay polish** – optimize for mobile webview (lightweight assets, OTP logins, shareable links).
-
-## Tech Stack
-
-- **Framework**: React 18, Vite, TypeScript, Tailwind, Zustand.
-- **Wallet & Identity**: Reown AppKit (WalletConnect v2).
-- **UI Library**: Composer Kit UI (`@composer-kit/ui`).
-- **Blockchain**: Celo (start with Alfajores testnet, target MiniPay-compatible mainnet deployment).
-- **Contracts**: Solidity (Foundry + Hardhat). The old Cairo/Dojo stack has been removed.
 
 ## Getting Started
 
@@ -55,13 +57,6 @@ pnpm dev
 ```
 
 The chess experience runs locally with mocked wallet hooks. As we wire in Reown AppKit, the provider will live in `client/src/providers/` (TBD) and Composer Kit components will replace the placeholder status bar and landing CTAs.
-
-## Deployment Plan
-
-1. Hook Reown AppKit into a new `WalletProvider`.
-2. Wrap the app with `ComposerKitProvider`.
-3. Implement payment/prediction flows against Celo Alfajores smart contracts.
-4. Provide a demo video + docs covering MiniPay onboarding, gameplay, and payouts.
 
 ## Contributing
 

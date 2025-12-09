@@ -2,14 +2,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "./ui/card"
 import { Progress } from "./ui/progress"
 import useAppStore from "../zustand/store"
 import { Coins, Zap, Heart, Loader2, AlertTriangle } from "lucide-react"
+import { useAccount } from 'wagmi'
 
 export function PlayerStats() {
-  // Placeholder - will be replaced with Celo wallet connection
-  const status = "disconnected";
+  const { isConnected, address } = useAccount()
   const player = useAppStore(state => state.player);
   const isLoading = useAppStore(state => state.isLoading);
-
-  const isConnected = status === "connected";
 
   // Use real player data or default values
   const stats = [
@@ -132,35 +130,16 @@ export function PlayerStats() {
           <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-3">
             <div className="flex items-center gap-2 text-yellow-400 text-sm">
               <Coins className="w-4 h-4" />
-              <span>Connect controller to load real player stats</span>
+              <span>Connect wallet to view your chess stats</span>
             </div>
           </div>
         )}
 
-        {isConnected && !player && (
-          <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-3">
-            <div className="flex items-center gap-2 text-blue-400 text-sm">
-              <Zap className="w-4 h-4" />
-              <span>Creating your player automatically...</span>
-            </div>
-          </div>
-        )}
-
-        {isConnected && player && (
+        {isConnected && address && (
           <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-3">
             <div className="flex items-center gap-2 text-green-400 text-sm">
               <Heart className="w-4 h-4" />
-              <span>Player ready! Use actions to train and progress.</span>
-            </div>
-          </div>
-        )}
-
-        {/* Low health warning */}
-        {player && player.health <= 20 && (
-          <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3">
-            <div className="flex items-center gap-2 text-red-400 text-sm">
-              <AlertTriangle className="w-4 h-4" />
-              <span>⚠️ Low health! Rest to recover before mining.</span>
+              <span>Wallet connected: {address.slice(0, 6)}...{address.slice(-4)}</span>
             </div>
           </div>
         )}

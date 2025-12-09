@@ -1,57 +1,55 @@
 import { Button } from "./ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
-import { Dumbbell, Hammer, Bed, Loader2, ExternalLink } from "lucide-react";
-import useAppStore from "../zustand/store";
+import { Play, Move, Loader2, ExternalLink } from "lucide-react";
+import { useAccount } from 'wagmi';
+import { useMatchManager } from "../hooks/useMatchManager";
+import { useState } from "react";
 
 export function GameActions() {
-  const player = useAppStore((state) => state.player);
+  const { address, chainId, isConnected } = useAccount();
+  const { createPvCMatch, submitMove, hash, isPending, isConfirming, isSuccess, error } = useMatchManager(chainId);
+  const [currentMatchId, setCurrentMatchId] = useState<bigint | null>(null);
 
-  // Placeholder action handlers (to be implemented)
-  const trainState = { isLoading: false, error: null, txStatus: null, txHash: null };
-  const mineState = { isLoading: false, error: null, txStatus: null, txHash: null };
-  const restState = { isLoading: false, error: null, txStatus: null, txHash: null };
-  const executeTrain = () => console.log("Train action - to be implemented");
-  const executeMine = () => console.log("Mine action - to be implemented");
-  const executeRest = () => console.log("Rest action - to be implemented");
-  const canTrain = false;
-  const canMine = false;
-  const canRest = false;
+  const handleCreateMatch = async () => {
+    try {
+      await createPvCMatch();
+    } catch (err) {
+      console.error('Failed to create match:', err);
+    }
+  };
+
+  const handleSubmitMove = () => {
+    if (!currentMatchId) return;
+    submitMove(currentMatchId, 12, 28); // Example: e2 to e4
+  };
+
+  const getExplorerUrl = (txHash: string) => {
+    if (chainId === 8453) return `https://basescan.org/tx/${txHash}`;
+    if (chainId === 42220) return `https://celoscan.io/tx/${txHash}`;
+    if (chainId === 44787) return `https://sepolia.celoscan.io/tx/${txHash}`;
+    return `https://basescan.org/tx/${txHash}`;
+  };
+
+  const isLoading = isPending || isConfirming;
+  const txStatus = isSuccess ? "SUCCESS" : isLoading ? "PENDING" : null;
 
   const actions = [
     {
-      icon: Dumbbell,
-      label: "Train",
-      description: "+10 EXP",
-      onClick: executeTrain,
+      icon: Play,
+      label: "Create PvC Match",
+      description: "Start a new game vs AI",
+      onClick: handleCreateMatch,
       color: "from-blue-500 to-blue-600",
-      state: trainState,
-      canExecute: canTrain,
+      canExecute: isConnected && !isLoading,
     },
     {
-      icon: Hammer,
-      label: "Mine",
-      description: "+5 Coins, -5 Health",
-      onClick: executeMine,
-      color: "from-yellow-500 to-yellow-600",
-      state: mineState,
-      canExecute: canMine,
-      disabledReason:
-        !canMine && player && (player.health || 0) <= 5
-          ? "Low Health!"
-          : undefined,
-    },
-    {
-      icon: Bed,
-      label: "Rest",
-      description: "+20 Health",
-      onClick: executeRest,
+      icon: Move,
+      label: "Submit Move",
+      description: "Make a chess move",
+      onClick: handleSubmitMove,
       color: "from-green-500 to-green-600",
-      state: restState,
-      canExecute: canRest,
-      disabledReason:
-        !canRest && player && (player.health || 0) >= 100
-          ? "Full Health!"
-          : undefined,
+      canExecute: isConnected && currentMatchId !== null && !isLoading,
+      disabledReason: !currentMatchId ? "Create a match first" : undefined,
     },
   ];
 
@@ -68,18 +66,17 @@ export function GameActions() {
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        {!player && (
+        {!isConnected && (
           <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-3 mb-4">
             <div className="text-yellow-400 text-sm text-center">
-              🎮 Connect controller and create player to unlock actions
+              🔗 Connect your wallet to start playing chess
             </div>
           </div>
         )}
 
         {actions.map((action) => {
           const Icon = action.icon;
-          const isLoading = action.state.isLoading;
-          const hasError = Boolean(action.state.error);
+          const hasError = Boolean(error);
 
           return (
             <div key={action.label} className="space-y-2">
@@ -106,34 +103,34 @@ export function GameActions() {
                 )}
               </Button>
 
-              {/* Individual transaction state */}
-              {(action.state.txStatus || hasError) && (
+              {/* Transaction state */}
+              {(txStatus || hasError) && (
                 <div
                   className={`p-3 rounded-lg border text-sm ${hasError
                       ? "bg-red-500/10 border-red-500/30 text-red-400"
-                      : action.state.txStatus === "SUCCESS"
+                      : txStatus === "SUCCESS"
                         ? "bg-green-500/10 border-green-500/30 text-green-400"
                         : "bg-yellow-500/10 border-yellow-500/30 text-yellow-400"
                     }`}
                 >
                   {hasError ? (
-                    `❌ Error: ${action.state.error}`
-                  ) : action.state.txStatus === "SUCCESS" ? (
+                    `❌ Error: ${error?.message || 'Transaction failed'}`
+                  ) : txStatus === "SUCCESS" ? (
                     <div className="space-y-2">
                       <div>✅ {action.label} completed successfully!</div>
-                      {action.state.txHash && (
+                      {hash && (
                         <div className="flex items-center gap-2 text-xs">
                           <span className="font-mono bg-black/20 px-2 py-1 rounded">
-                            {formatAddress(action.state.txHash)}
+                            {formatAddress(hash)}
                           </span>
                           <a
-                            href={`https://sepolia.starkscan.co/tx/${action.state.txHash}`}
+                            href={getExplorerUrl(hash)}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="flex items-center gap-1 hover:underline"
                           >
                             <ExternalLink className="w-3 h-3" />
-                            StarkScan
+                            View on Explorer
                           </a>
                         </div>
                       )}
@@ -144,13 +141,13 @@ export function GameActions() {
                         <Loader2 className="w-3 h-3 animate-spin" />
                         ⏳ {action.label} processing...
                       </div>
-                      {action.state.txHash && (
+                      {hash && (
                         <div className="flex items-center gap-2 text-xs">
                           <span className="font-mono bg-black/20 px-2 py-1 rounded">
-                            {formatAddress(action.state.txHash)}
+                            {formatAddress(hash)}
                           </span>
                           <a
-                            href={`https://sepolia.starkscan.co/tx/${action.state.txHash}`}
+                            href={getExplorerUrl(hash)}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="flex items-center gap-1 hover:underline"

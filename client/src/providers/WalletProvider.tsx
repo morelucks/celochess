@@ -1,11 +1,11 @@
-import { createAppKit } from '@reown/appkit/react'
+import { createAppKit, AppKitProvider } from '@reown/appkit/react'
 import { WagmiProvider } from 'wagmi'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createConfig, http } from 'wagmi'
-import { celo, celoAlfajores } from 'viem/chains'
+import { celo, celoAlfajores, base } from 'viem/chains'
 
 // Configure Celo chains
-const chains = [celoAlfajores, celo] as const
+const chains = [celoAlfajores, celo, base] as const
 
 // Create wagmi config
 const wagmiConfig = createConfig({
@@ -13,6 +13,7 @@ const wagmiConfig = createConfig({
   transports: {
     [celoAlfajores.id]: http(),
     [celo.id]: http(),
+    [base.id]: http(),
   },
 })
 
@@ -47,9 +48,11 @@ export const appKit = createAppKit({
 export function WalletProvider({ children }: { children: React.ReactNode }) {
   return (
     <WagmiProvider config={wagmiConfig}>
-      <QueryClientProvider client={queryClient}>
-        {children}
-      </QueryClientProvider>
+      <AppKitProvider appKit={appKit}>
+        <QueryClientProvider client={queryClient}>
+          {children}
+        </QueryClientProvider>
+      </AppKitProvider>
     </WagmiProvider>
   )
 }

@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Play, Move, Loader2, ExternalLink } from "lucide-react";
 import { useAccount } from 'wagmi';
 import { useMatchManager } from "../hooks/useMatchManager";
+import { getExplorerUrl } from "../config/contracts";
 import { useState } from "react";
 
 export function GameActions() {
@@ -21,13 +22,6 @@ export function GameActions() {
   const handleSubmitMove = () => {
     if (!currentMatchId) return;
     submitMove(currentMatchId, 12, 28); // Example: e2 to e4
-  };
-
-  const getExplorerUrl = (txHash: string) => {
-    if (chainId === 8453) return `https://basescan.org/tx/${txHash}`;
-    if (chainId === 42220) return `https://celoscan.io/tx/${txHash}`;
-    if (chainId === 44787) return `https://sepolia.celoscan.io/tx/${txHash}`;
-    return `https://basescan.org/tx/${txHash}`;
   };
 
   const isLoading = isPending || isConfirming;
@@ -124,7 +118,7 @@ export function GameActions() {
                             {formatAddress(hash)}
                           </span>
                           <a
-                            href={getExplorerUrl(hash)}
+                            href={getExplorerUrl(chainId, hash)}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="flex items-center gap-1 hover:underline"
@@ -147,7 +141,7 @@ export function GameActions() {
                             {formatAddress(hash)}
                           </span>
                           <a
-                            href={getExplorerUrl(hash)}
+                            href={getExplorerUrl(chainId, hash)}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="flex items-center gap-1 hover:underline"

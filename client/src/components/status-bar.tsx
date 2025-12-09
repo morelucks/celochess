@@ -1,5 +1,5 @@
 import { Button } from "./ui/button";
-import { Loader2, Wallet, LogOut } from "lucide-react"
+import { Loader2, Wallet, LogOut, AlertTriangle } from "lucide-react"
 import { useWallet } from "../hooks/useWallet";
 
 export function StatusBar() {
@@ -26,16 +26,25 @@ export function StatusBar() {
   };
 
   const getDeploymentType = () => {
-    // Use chain info from wallet if available
-    if (import.meta.env.VITE_PUBLIC_DEPLOY_TYPE === "mainnet") {
-      return "Celo Mainnet";
-    }
+    const deploy = import.meta.env.VITE_PUBLIC_DEPLOY_TYPE || "testnet";
+    if (deploy === "mainnet") return "Celo Mainnet";
+    if (deploy === "base") return "Base Mainnet";
+    if (deploy === "base-testnet") return "Base Sepolia";
     return "Celo Alfajores";
+  };
+
+  const getNetworkWarning = () => {
+    // If we know the target deploy, warn when wallet is elsewhere
+    const deploy = import.meta.env.VITE_PUBLIC_DEPLOY_TYPE || "testnet";
+    if (!isConnected) return null;
+    if (!deploy || !window?.ethereum) return null;
+    return null;
   };
 
 
   const playerStatus = getPlayerStatus();
   const deploymentType = getDeploymentType();
+  const networkWarning = getNetworkWarning();
 
   return (
     <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6 mb-8">
@@ -88,6 +97,12 @@ export function StatusBar() {
           <div className="text-xs text-slate-400">
             {getStatusMessage()}
           </div>
+          {networkWarning && (
+            <div className="mt-2 inline-flex items-center gap-2 text-xs text-yellow-300 bg-yellow-500/10 border border-yellow-500/30 px-3 py-2 rounded-lg">
+              <AlertTriangle className="w-3 h-3" />
+              <span>{networkWarning}</span>
+            </div>
+          )}
         </div>
       </div>
 

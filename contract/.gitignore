@@ -12,3 +12,7 @@ docs/
 
 # Dotenv file
 .env
+
+# Interaction and helper scripts
+script/*.sh
+script/*.s.sol
